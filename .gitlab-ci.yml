@@ -36,3 +36,19 @@ npm-audit:
     expire_in: 30 days
     paths:
       - "report.html"
+
+osv-scanner:
+  stage: sast
+  image: alpine:edge
+  before_script:
+    # options no-cache...
+    - apk add osv-scanner
+  script:
+    - osv-scanner scan -r --format=html . > report-osv.html
+  allow_failure: true
+  artifacts:
+    when: always
+    public: false
+    expire_in: 30 days
+    paths:
+      - "report-osv.html"
