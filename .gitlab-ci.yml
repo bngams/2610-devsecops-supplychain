@@ -22,5 +22,17 @@ unit-test-job:   # This job runs in the test stage.
 
 npm-audit:
   stage: sast
+  # In reality: add to dev dependencies
+  before_script:
+    - npm install -g npm-audit-html
   script:
-    - npm audit
+    - npm audit --json | npm-audit-html --output report.html
+  # do not block the pipeline, display a warning 
+  allow_failure: true
+  # save report
+  artifacts:
+    when: always
+    public: false
+    expire_in: 30 days
+    paths:
+      - "report.html"
