@@ -8,6 +8,7 @@ cache:
 stages:          # List of stages for jobs, and their order of execution
   - build
   - test
+  - sast
 
 build-app:       # This job runs in the build stage, which runs first.
   stage: build
@@ -18,3 +19,8 @@ unit-test-job:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
   script:
     - npm run test
+
+npm-audit:
+  stage: sast
+  script:
+    - npm audit
