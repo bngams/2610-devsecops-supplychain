@@ -1,65 +1,64 @@
-# Env container imager
-image: 'node:24.22.1-trixie-slim'
-
-cache:
-  paths:
-    - node_modules/
-
+image: node:24.22.1-trixie-slim
 
 variables:
-  - EXEC_ONLY: "osv-scanner"
+  EXEC_ONLY:
+    value: "osv-scanner"
+    options: ["osv-scanner", "npm-audit", "all", "none"]
+    description: "Scanner SAST à exécuter"
 
-stages:          # List of stages for jobs, and their order of execution
+stages:
   - sast
   - build
   - test
-  
 
-build-app:       # This job runs in the build stage, which runs first.
+default:
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+
+build-app:
   stage: build
   script:
-    - npm install
+    - npm ci --cache .npm --prefer-offline
+  artifacts:
+    paths: [node_modules/]
+    expire_in: 1 hour
 
-unit-test-job:   # This job runs in the test stage.
-  stage: test    # It only starts when the job in the build stage completes successfully.
+unit-test-job:
+  stage: test
+  needs: [build-app]
   script:
     - npm run test
 
-npm-audit:
+.sast:
   stage: sast
-  # In reality: add to dev dependencies
-  before_script:
-    - npm install -g npm-audit-html
+  cache: []
+  allow_failure: true
+  artifacts:
+    when: always
+    access: developer
+    expire_in: 30 days
+  rules:
+    - if: $EXEC_ONLY == $SCANNER || $EXEC_ONLY == "all"
+
+npm-audit:
+  extends: .sast
+  variables:
+    SCANNER: "npm-audit"
   script:
     - npm audit --json | npm-audit-html --output report.html
-  # do not block the pipeline, display a warning 
-  allow_failure: true
-  # save report
   artifacts:
-    when: always
-    public: false
-    expire_in: 30 days
-    paths:
-      - "report.html"
-  rules:
-    - if: '$EXEC_ONLY != null && $EXEC_ONLY == "npm-audit"'
-    - when: never
+    paths: [report.html]
 
 osv-scanner:
-  stage: sast
+  extends: .sast
   image: alpine:edge
+  variables:
+    SCANNER: "osv-scanner"
   before_script:
-    # options no-cache...
-    - apk add osv-scanner
+    - apk add --no-cache osv-scanner
   script:
-    - osv-scanner scan -r --format=html . > report-osv.html
-  allow_failure: true
+    - osv-scanner scan source -r --format html --output-file report-osv.html .
   artifacts:
-    when: always
-    public: false
-    expire_in: 30 days
-    paths:
-      - "report-osv.html"
-  rules:
-    - if: '$EXEC_ONLY != null && $EXEC_ONLY == "osv-scanner"'
-    - when: never
+    paths: [report-osv.html]
