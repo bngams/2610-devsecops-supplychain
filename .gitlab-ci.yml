@@ -5,10 +5,15 @@ cache:
   paths:
     - node_modules/
 
+
+variables:
+  - EXEC_ONLY: "osv-scanner"
+
 stages:          # List of stages for jobs, and their order of execution
+  - sast
   - build
   - test
-  - sast
+  
 
 build-app:       # This job runs in the build stage, which runs first.
   stage: build
@@ -36,6 +41,9 @@ npm-audit:
     expire_in: 30 days
     paths:
       - "report.html"
+  rules:
+    - if: '$EXEC_ONLY != null && $EXEC_ONLY == "npm-audit"'
+    - when: never
 
 osv-scanner:
   stage: sast
@@ -52,3 +60,6 @@ osv-scanner:
     expire_in: 30 days
     paths:
       - "report-osv.html"
+  rules:
+    - if: '$EXEC_ONLY != null && $EXEC_ONLY == "osv-scanner"'
+    - when: never
