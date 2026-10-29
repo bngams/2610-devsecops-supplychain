@@ -244,11 +244,11 @@ grype-sbom:
     key: grype-db
     paths: [.grype-db/]
   script:
-    - /grype sbom:sbom.cdx.json -o table -o json=grype.json --fail-on critical
+    - /grype sbom:sbom.cdx.json -o template -t grype-html.tmpl --fail-on critical > grype.html
   artifacts:
     access: developer
     when: always
-    paths: [grype.json]
+    paths: [grype.html]
 
 # 9.4 — OSV-Scanner sur le même SBOM, pour comparer (installation vérifiée à l'étape 12)
 osv-sbom:
