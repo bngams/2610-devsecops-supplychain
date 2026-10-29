@@ -1,4 +1,5 @@
-image: node:24.22.1-trixie-slim
+# Étape 12.3 : tag lisible + digest qui fait foi
+image: node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a
 
 variables:
   EXEC_ONLY:
@@ -31,6 +32,8 @@ build-app:
   stage: build
   script:
     - npm ci --cache .npm --prefer-offline
+    # Étape 12.2 : signatures du registry npm + attestations de provenance
+    - npm audit signatures
   artifacts:
     paths: [node_modules/]
     expire_in: 1 hour
@@ -61,13 +64,31 @@ npm-audit:
   artifacts:
     paths: [report.html]
 
+# Étape 12.1 : installation VÉRIFIÉE d'osv-scanner (remplace alpine:edge + apk add),
+# partagée par les jobs osv-scanner (source) et osv-sbom (SBOM)
+.osv-verified:
+  image: alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+  variables:
+    SLSA_VERIFIER_VERSION: "v2.7.1"
+    # empreinte publiée dans https://github.com/slsa-framework/slsa-verifier/blob/main/SHA256SUM.md
+    SLSA_VERIFIER_SHA256: "946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
+    OSV_VERSION: "v2.6.0"
+  before_script:
+    - apk add --no-cache curl
+    # 1) l'outil de vérification lui-même : vérifié par empreinte (1er maillon de la chaîne)
+    - curl -sSfL -o /usr/local/bin/slsa-verifier "https://github.com/slsa-framework/slsa-verifier/releases/download/${SLSA_VERIFIER_VERSION}/slsa-verifier-linux-amd64"
+    - echo "${SLSA_VERIFIER_SHA256}  /usr/local/bin/slsa-verifier" | sha256sum -c -
+    - chmod +x /usr/local/bin/slsa-verifier
+    # 2) osv-scanner + sa provenance SLSA, vérifiés AVANT d'exécuter le binaire
+    - curl -sSfL -o /usr/local/bin/osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+    - curl -sSfL -o /tmp/osv.intoto.jsonl "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/multiple.intoto.jsonl"
+    - slsa-verifier verify-artifact /usr/local/bin/osv-scanner --provenance-path /tmp/osv.intoto.jsonl --source-uri github.com/google/osv-scanner --source-tag "${OSV_VERSION}"
+    - chmod +x /usr/local/bin/osv-scanner
+
 osv-scanner:
-  extends: .sast
-  image: alpine:edge
+  extends: [.sast, .osv-verified]
   variables:
     SCANNER: "osv-scanner"
-  before_script:
-    - apk add --no-cache osv-scanner
   script:
     - osv-scanner scan source -r --format html --output-file report-osv.html .
   artifacts:
@@ -80,7 +101,8 @@ sonarcloud-check:
   variables:
     SCANNER: "sonar-scanner"
   image:
-    name: sonarsource/sonar-scanner-cli:latest
+    # Étape 12.3 : version explicite (>= 2 semaines) + digest
+    name: sonarsource/sonar-scanner-cli:12.2.0.4256_8.1.0@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
     entrypoint: [""]
   cache:
     key: "${CI_JOB_NAME}"
@@ -151,9 +173,10 @@ kics:
 # ----------------------------------------------------------------------------
 docker-build:
   stage: package
-  image: docker:28.3.2
+  # Étape 12.3 : docker:<version> de l'image officielle EST la variante dind -> même digest
+  image: docker:28.3.2@sha256:44383404ebf0c36243f5969f0dddd23c204ea3bb185e7473a4141f6ccfd07b53
   services:
-    - docker:28.3.2-dind
+    - docker:28.3.2-dind@sha256:44383404ebf0c36243f5969f0dddd23c204ea3bb185e7473a4141f6ccfd07b53
   variables:
     DOCKER_TLS_CERTDIR: "/certs"     # le client et le démon dind communiquent en TLS
   needs: [unit-test-job]             # on ne construit que du code dont les tests passent
@@ -250,15 +273,13 @@ grype-sbom:
     when: always
     paths: [grype.html]
 
-# 9.4 — OSV-Scanner sur le même SBOM, pour comparer (installation vérifiée à l'étape 12)
+# 9.4 puis 12.1 — OSV-Scanner sur le même SBOM, avec le binaire vérifié par slsa-verifier
 osv-sbom:
+  extends: .osv-verified
   stage: scan-image
-  image: alpine:edge
   needs: [sbom-image]
   allow_failure: true
   cache: []
-  before_script:
-    - apk add --no-cache osv-scanner
   script:
     # -L : OSV reconnaît un SBOM CycloneDX grâce à l'extension .cdx.json
     - osv-scanner scan source -L sbom.cdx.json --format html --output-file osv-sbom.html
