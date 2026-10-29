@@ -98,7 +98,7 @@ docker images demo-app             # -> demo-app  initial  ...  1.8GB
 docker rm -f demo
 ```
 
-### 6.4 🧪 Manip : jouez le scanner avant les scanners
+### 6.4 🧪 Manip : Votre analyse avant les scanners
 
 L'app fonctionne. Avant d'automatiser l'analyse, relisez le `Dockerfile` (5 lignes utiles) et la
 sortie ci-dessus, puis **notez au moins trois défauts** de sécurité ou de robustesse. À l'étape
