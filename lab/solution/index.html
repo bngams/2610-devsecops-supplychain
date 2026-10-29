@@ -1,0 +1,20 @@
+<html>
+  <head>
+    <title>Welcome</title>
+    <script>
+      function toggleText() {
+        var hiddenText = document.getElementById("hidden-text");
+        if (hiddenText.style.display === "none") {
+          hiddenText.style.display = "block";
+        } else {
+          hiddenText.style.display = "none";
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>This is the app welcome page</h1>
+    <button id="toggle-btn" onclick="toggleText()">Voir le texte</button>
+    <p id="hidden-text" style="display: none">Texte caché</p>
+  </body>
+</html>

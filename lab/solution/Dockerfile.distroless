@@ -1,0 +1,20 @@
+# ---------- stage 1 "deps" : identique au Dockerfile principal ----------
+FROM node:24.22.1-trixie-slim AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+
+# ---------- stage 2 : runtime distroless (ni shell, ni npm, ni apt) ----------
+FROM gcr.io/distroless/nodejs24-debian13:nonroot
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json index.js index.html ./
+# L'image :nonroot tourne déjà en 65532, mais les scanners de Dockerfile ne lisent que CE fichier :
+# sans USER explicite, trivy (DS-0002) et kics lèvent un faux positif HIGH.
+USER 65532:65532
+EXPOSE 5000
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:5000/hello').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+# L'ENTRYPOINT de l'image distroless est déjà "node" -> on ne passe que le script
+CMD ["index.js"]

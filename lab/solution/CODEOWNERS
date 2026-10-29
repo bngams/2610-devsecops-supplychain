@@ -1,0 +1,12 @@
+# Étape 13 : toute modification de ces fichiers exige la relecture de leurs propriétaires.
+# Remplacez @bngams par votre compte (ou celui du formateur).
+# L'approbation OBLIGATOIRE des code owners nécessite GitLab Premium ;
+# en Free, les propriétaires sont seulement suggérés comme relecteurs.
+
+/.gitlab-ci.yml      @bngams
+/Dockerfile*         @bngams
+/.dockerignore       @bngams
+/package.json        @bngams
+/package-lock.json   @bngams
+/policy/             @bngams
+/CODEOWNERS          @bngams

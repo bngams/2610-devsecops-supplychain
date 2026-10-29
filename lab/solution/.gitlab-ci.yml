@@ -1,0 +1,434 @@
+# =============================================================================
+#  Pipeline DevSecOps — SOLUTION COMPLÈTE du lab (étapes 1 à 13)
+#  À ne consulter qu'en dernier recours 😉
+#
+#  sast        -> npm audit, osv-scanner (source), sonar      (étape 5)
+#               + hadolint, trivy config, kics (Dockerfile)    (étape 7)
+#  build/test  -> npm ci + mocha                               (étapes 4)
+#  package     -> docker build + push vers le registry GitLab  (étape 8)
+#  sbom        -> syft (image) + cdxgen (sources)              (étape 9)
+#  scan-image  -> trivy image, grype (SBOM), osv (SBOM)        (étape 9 + 12)
+#  sign        -> cosign keyless : signature + attestations    (étapes 10-11)
+#  verify      -> cosign verify + politique de provenance      (étape 11)
+# =============================================================================
+
+# Étape 12.3 : tag lisible + digest qui fait foi
+image: node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a
+
+variables:
+  EXEC_ONLY:
+    value: "all"
+    options: ["osv-scanner", "npm-audit", "sonar-scanner", "hadolint", "trivy-config", "kics", "dockerfile", "all", "none"]
+    description: "Scanner SAST à exécuter"
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+  GIT_DEPTH: "0"
+  # Étape 6 : cypress (devDependency) télécharge ~500 Mo de binaire à chaque npm ci sinon
+  CYPRESS_INSTALL_BINARY: "0"
+  # Étape 8 : tag lisible de l'image ; le DIGEST (immuable) est transmis par dotenv (IMAGE_REF)
+  IMAGE_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+
+# Étape 9.7 : évite les pipelines en double (branche + merge request)
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - sast
+  - build
+  - test
+  - package
+  - sbom
+  - scan-image
+  - sign
+  - verify
+
+# Étape 9.7 : un pipeline planifié (schedule) ne doit QUE re-scanner le SBOM, pas tout reconstruire
+.no-schedule: &no-schedule
+  if: $CI_PIPELINE_SOURCE == "schedule"
+  when: never
+
+default:
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm/]
+
+# ----------------------------------------------------------------------------
+# build / test (étape 4)
+# ----------------------------------------------------------------------------
+build-app:
+  stage: build
+  rules:
+    - *no-schedule
+    - when: on_success
+  script:
+    # Étape 13 : --ignore-scripts -> aucun script postinstall des dépendances n'est exécuté
+    - npm ci --cache .npm --prefer-offline --ignore-scripts
+    # Étape 12.2 : signatures du registry npm + attestations de provenance
+    - npm audit signatures
+  artifacts:
+    paths: [node_modules/]
+    expire_in: 1 hour
+
+unit-test-job:
+  stage: test
+  needs: [build-app]
+  rules:
+    - *no-schedule
+    - when: on_success
+  script:
+    - npm run test
+
+# ----------------------------------------------------------------------------
+# SAST (étape 5) — inchangé, sauf la règle "pas en schedule"
+# ----------------------------------------------------------------------------
+.sast:
+  stage: sast
+  cache: []
+  allow_failure: true
+  artifacts:
+    when: always
+    access: developer
+    expire_in: 30 days
+  rules:
+    - *no-schedule
+    - if: $EXEC_ONLY == $SCANNER || $EXEC_ONLY == "all"
+
+npm-audit:
+  extends: .sast
+  variables:
+    SCANNER: "npm-audit"
+  script:
+    - npm audit --json | npx --yes npm-audit-html@1.5.0 --output report.html
+  artifacts:
+    paths: [report.html]
+
+# Étape 12.1 : installation VÉRIFIÉE d'osv-scanner (remplace alpine:edge + apk add),
+# partagée par les jobs osv-scanner (source) et osv-sbom (SBOM)
+.osv-verified:
+  image: alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+  variables:
+    SLSA_VERIFIER_VERSION: "v2.7.1"
+    # empreinte publiée dans https://github.com/slsa-framework/slsa-verifier/blob/main/SHA256SUM.md
+    SLSA_VERIFIER_SHA256: "946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
+    OSV_VERSION: "v2.6.0"
+  before_script:
+    - apk add --no-cache curl
+    # 1) l'outil de vérification lui-même : vérifié par empreinte (on ne peut pas faire mieux pour le 1er maillon)
+    - curl -sSfL -o /usr/local/bin/slsa-verifier "https://github.com/slsa-framework/slsa-verifier/releases/download/${SLSA_VERIFIER_VERSION}/slsa-verifier-linux-amd64"
+    - echo "${SLSA_VERIFIER_SHA256}  /usr/local/bin/slsa-verifier" | sha256sum -c -
+    - chmod +x /usr/local/bin/slsa-verifier
+    # 2) osv-scanner + sa provenance SLSA, vérifiés avant usage
+    - curl -sSfL -o /usr/local/bin/osv-scanner "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+    - curl -sSfL -o /tmp/osv.intoto.jsonl "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/multiple.intoto.jsonl"
+    - slsa-verifier verify-artifact /usr/local/bin/osv-scanner --provenance-path /tmp/osv.intoto.jsonl --source-uri github.com/google/osv-scanner --source-tag "${OSV_VERSION}"
+    - chmod +x /usr/local/bin/osv-scanner
+
+osv-scanner:
+  extends: [.sast, .osv-verified]
+  variables:
+    SCANNER: "osv-scanner"
+  script:
+    - osv-scanner scan source -r --format html --output-file report-osv.html .
+  artifacts:
+    paths: [report-osv.html]
+
+sonarcloud-check:
+  extends: .sast
+  variables:
+    SCANNER: "sonar-scanner"
+  image:
+    # Étape 12.3 : version explicite (>= 2 semaines) + digest
+    name: sonarsource/sonar-scanner-cli:12.2.0.4256_8.1.0@sha256:a3f4215076706c95a17a68c19322ee916e40a3acd081a8c1a1e839e0194afa57
+    entrypoint: [""]
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner
+  rules:
+    - *no-schedule
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ----------------------------------------------------------------------------
+# Étape 7 — analyse du Dockerfile (misconfiguration / IaC)
+# ----------------------------------------------------------------------------
+.dockerfile-scan:
+  extends: .sast
+  rules:
+    - *no-schedule
+    - if: $EXEC_ONLY == $SCANNER || $EXEC_ONLY == "dockerfile" || $EXEC_ONLY == "all"
+
+hadolint:
+  extends: .dockerfile-scan
+  image: hadolint/hadolint:v2.15.1-alpine
+  variables:
+    SCANNER: "hadolint"
+  script:
+    # 1) rapport au format Code Quality (affiché dans les merge requests), sans faire échouer
+    - hadolint --format gitlab_codeclimate Dockerfile > hadolint-codequality.json || true
+    # 2) sortie lisible + code retour : échoue à partir des "warning"
+    - hadolint --failure-threshold warning Dockerfile
+  artifacts:
+    paths: [hadolint-codequality.json]
+    reports:
+      codequality: hadolint-codequality.json
+
+trivy-config:
+  extends: .dockerfile-scan
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  variables:
+    SCANNER: "trivy-config"
+  script:
+    - trivy config --format table --output trivy-config.txt Dockerfile
+    - trivy config --exit-code 1 --severity HIGH,CRITICAL Dockerfile
+  artifacts:
+    paths: [trivy-config.txt]
+
+kics:
+  extends: .dockerfile-scan
+  image:
+    name: checkmarx/kics:v2.2.0
+    entrypoint: [""]
+  variables:
+    SCANNER: "kics"
+  # Étape 7.5 : KICS devient la "porte" du Dockerfile -> on ne tolère plus l'échec
+  allow_failure: false
+  script:
+    - kics scan -p Dockerfile -o kics-report --report-formats html,json,glsast --fail-on high,critical --no-progress
+  artifacts:
+    paths: [kics-report/]
+    reports:
+      sast: kics-report/gl-sast-results.json
+
+# ----------------------------------------------------------------------------
+# Étape 8 — construire et publier l'image dans le registry du projet
+# ----------------------------------------------------------------------------
+docker-build:
+  stage: package
+  # docker:<version> de l'image officielle EST la variante dind -> même digest pour les deux
+  image: docker:28.3.2@sha256:44383404ebf0c36243f5969f0dddd23c204ea3bb185e7473a4141f6ccfd07b53
+  services:
+    - docker:28.3.2-dind@sha256:44383404ebf0c36243f5969f0dddd23c204ea3bb185e7473a4141f6ccfd07b53
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  needs: [unit-test-job]
+  cache: []
+  rules:
+    - *no-schedule
+    - when: on_success
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build --pull -t "$IMAGE_TAG" .
+    - docker push "$IMAGE_TAG"
+    # RepoDigests = registry/projet@sha256:... (le digest du manifest poussé)
+    - IMAGE_REF=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_TAG")
+    - echo "IMAGE_REF=${IMAGE_REF}" >> build.env
+    - echo "BUILD_JOB_ID=${CI_JOB_ID}" >> build.env
+    - cat build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+# ----------------------------------------------------------------------------
+# Étape 9 — SBOM puis scan du SBOM
+# ----------------------------------------------------------------------------
+sbom-image:
+  stage: sbom
+  image:
+    name: anchore/syft:v1.54.1-debug   # variante "debug" = avec un shell busybox (exigé par GitLab) ; binaire en /syft
+    entrypoint: [""]
+  needs: [docker-build]
+  cache: []
+  rules:
+    - *no-schedule
+    - when: on_success
+  variables:
+    SYFT_REGISTRY_AUTH_AUTHORITY: "$CI_REGISTRY"
+    SYFT_REGISTRY_AUTH_USERNAME: "$CI_REGISTRY_USER"
+    SYFT_REGISTRY_AUTH_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    # pas d'entrée par fichier dans le SBOM (sinon ~2 600 composants "file" inutiles)
+    SYFT_FILE_METADATA_SELECTION: "none"
+  script:
+    - /syft scan "registry:${IMAGE_REF}" -o cyclonedx-json=sbom.cdx.json -o table
+  artifacts:
+    access: developer
+    paths: [sbom.cdx.json]
+    expire_in: 90 days   # conservé pour le re-scan nocturne (étape 9.7)
+
+sbom-source:
+  stage: sbom
+  needs: []
+  cache: []
+  rules:
+    - *no-schedule
+    - when: on_success
+  script:
+    - npx --yes @cyclonedx/cdxgen@12.8.5 -t js -o sbom-source.cdx.json .
+  artifacts:
+    access: developer
+    paths: [sbom-source.cdx.json]
+    expire_in: 30 days
+
+trivy-image:
+  stage: scan-image
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  needs: [docker-build]
+  allow_failure: true   # informatif : la "porte" est grype-sbom
+  rules:
+    - *no-schedule
+    - when: on_success
+  variables:
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    TRIVY_CACHE_DIR: ".trivycache/"
+  cache:
+    key: trivy-db
+    paths: [.trivycache/]
+  script:
+    - trivy image --format table --output trivy-image.txt "$IMAGE_REF"
+    - trivy image --exit-code 1 --severity CRITICAL "$IMAGE_REF"
+  artifacts:
+    access: developer
+    when: always
+    paths: [trivy-image.txt]
+
+grype-sbom:
+  stage: scan-image
+  image:
+    name: anchore/grype:v0.120.1-debug   # variante "debug" (shell busybox) ; binaire en /grype
+    entrypoint: [""]
+  needs: [sbom-image]
+  rules:
+    - *no-schedule
+    - when: on_success
+  variables:
+    GRYPE_DB_CACHE_DIR: "${CI_PROJECT_DIR}/.grype-db"
+  cache:
+    key: grype-db
+    paths: [.grype-db/]
+  script:
+    - /grype sbom:sbom.cdx.json -o table -o json=grype.json --fail-on critical
+  artifacts:
+    access: developer
+    when: always
+    paths: [grype.json]
+
+# Étape 9.4 puis 12.1 : OSV sur le SBOM, avec le binaire vérifié par slsa-verifier
+osv-sbom:
+  extends: .osv-verified
+  stage: scan-image
+  needs: [sbom-image]
+  allow_failure: true
+  cache: []
+  rules:
+    - *no-schedule
+    - when: on_success
+  script:
+    - osv-scanner scan source -L sbom.cdx.json --format html --output-file osv-sbom.html
+  artifacts:
+    access: developer
+    when: always
+    paths: [osv-sbom.html]
+
+# Étape 9.7 — re-scan nocturne : AUCUN rebuild, on ré-évalue le SBOM de la dernière image de main
+nightly-sbom-rescan:
+  stage: scan-image
+  image:
+    name: anchore/grype:v0.120.1-debug   # variante "debug" (shell busybox) ; binaire en /grype
+    entrypoint: [""]
+  needs: []
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  variables:
+    GRYPE_DB_CACHE_DIR: "${CI_PROJECT_DIR}/.grype-db"
+  cache:
+    key: grype-db
+    paths: [.grype-db/]
+  script:
+    - 'wget --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -O sbom.cdx.json "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/artifacts/${CI_DEFAULT_BRANCH}/raw/sbom.cdx.json?job=sbom-image"'
+    - /grype sbom:sbom.cdx.json -o table --fail-on critical
+
+# ----------------------------------------------------------------------------
+# Étapes 10-11 — signature keyless + attestations (SBOM, provenance)
+# ----------------------------------------------------------------------------
+sign-image:
+  stage: sign
+  image:
+    name: ghcr.io/sigstore/cosign/cosign:v3.1.3-dev
+    entrypoint: [""]
+  # on ne signe QUE ce qui a passé la porte grype-sbom
+  needs: [docker-build, sbom-image, grype-sbom]
+  cache: []
+  rules:
+    - *no-schedule
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  id_tokens:
+    SIGSTORE_ID_TOKEN:       # jeton OIDC émis par GitLab pour CE job, lu automatiquement par cosign
+      aud: sigstore
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | cosign login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    # 1) signature de l'image (par DIGEST, jamais par tag)
+    - cosign sign --yes "$IMAGE_REF"
+    # 2) attestation SBOM : "voici la liste signée de ce que contient cette image"
+    - cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "$IMAGE_REF"
+    # 3) attestation de provenance SLSA v1 : "qui / quoi / comment a construit cette image"
+    - |
+      cat > provenance.json <<JSON
+      {
+        "buildDefinition": {
+          "buildType": "https://gitlab.com/gitlab-org/gitlab-runner/-/blob/v${CI_RUNNER_VERSION}/PROVENANCE.md",
+          "externalParameters": {
+            "source": "${CI_PROJECT_URL}",
+            "entryPoint": "${CI_CONFIG_PATH}",
+            "ref": "${CI_COMMIT_REF_NAME}",
+            "variables": {
+              "CI_PIPELINE_ID": "${CI_PIPELINE_ID}",
+              "CI_PIPELINE_URL": "${CI_PIPELINE_URL}",
+              "CI_PIPELINE_SOURCE": "${CI_PIPELINE_SOURCE}",
+              "BUILD_JOB_ID": "${BUILD_JOB_ID}"
+            }
+          },
+          "resolvedDependencies": [
+            { "uri": "git+${CI_PROJECT_URL}@${CI_COMMIT_REF_NAME}", "digest": { "gitCommit": "${CI_COMMIT_SHA}" } }
+          ]
+        },
+        "runDetails": {
+          "builder": { "id": "${CI_SERVER_URL}/${CI_PROJECT_PATH}/-/runners/${CI_RUNNER_ID}", "version": { "gitlab-runner": "${CI_RUNNER_VERSION}" } },
+          "metadata": { "invocationId": "${CI_JOB_URL}", "startedOn": "${CI_JOB_STARTED_AT}" }
+        }
+      }
+      JSON
+    - cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$IMAGE_REF"
+  artifacts:
+    paths: [provenance.json]
+
+verify-image:
+  stage: verify
+  image:
+    name: ghcr.io/sigstore/cosign/cosign:v3.1.3-dev
+    entrypoint: [""]
+  needs: [docker-build, sign-image]
+  cache: []
+  rules:
+    - *no-schedule
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  variables:
+    # identité attendue du signataire : <projet>//<fichier CI>@<ref>  (double slash obligatoire)
+    SIGNER_IDENTITY: "${CI_PROJECT_URL}//.gitlab-ci.yml@refs/heads/${CI_DEFAULT_BRANCH}"
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | cosign login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - cosign verify --certificate-identity "$SIGNER_IDENTITY" --certificate-oidc-issuer "$CI_SERVER_URL" "$IMAGE_REF"
+    - cosign verify-attestation --type cyclonedx --certificate-identity "$SIGNER_IDENTITY" --certificate-oidc-issuer "$CI_SERVER_URL" "$IMAGE_REF" > /dev/null
+    - cosign verify-attestation --type slsaprovenance1 --policy policy/provenance.rego --certificate-identity "$SIGNER_IDENTITY" --certificate-oidc-issuer "$CI_SERVER_URL" "$IMAGE_REF" > /dev/null
+    - echo "✅ image signée, SBOM et provenance vérifiés -> déployable"
