@@ -1,0 +1,12 @@
+.git
+.gitlab-ci.yml
+node_modules
+npm-debug.log
+Dockerfile*
+.dockerignore
+*.md
+test.js
+sonar-project.properties
+.sonar
+.npm
+lab

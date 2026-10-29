@@ -2,16 +2,24 @@ image: node:24.22.1-trixie-slim
 
 variables:
   EXEC_ONLY:
-    value: "sonar-scanner"
-    options: ["osv-scanner", "npm-audit", "sonar-scanner", "all", "none"]
+    # Étape 7.3 : "dockerfile" par défaut -> la porte KICS tourne à chaque push
+    value: "dockerfile"
+    options: ["osv-scanner", "npm-audit", "sonar-scanner", "hadolint", "trivy-config", "kics", "dockerfile", "all", "none"]
     description: "Scanner SAST à exécuter"
   SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
   GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  # Étape 6.2 : cypress (devDependency) télécharge ~500 Mo de binaire à chaque npm ci sinon
+  CYPRESS_INSTALL_BINARY: "0"
+  # Étape 8.4 : tag lisible de l'image ; le DIGEST (immuable) est transmis par dotenv (IMAGE_REF)
+  IMAGE_TAG: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
 
 stages:
   - sast
   - build
   - test
+  - package      # étape 8
+  - sbom         # étape 9.3
+  - scan-image   # étapes 9.2 et 9.4
 
 default:
   cache:
@@ -80,8 +88,181 @@ sonarcloud-check:
       - .sonar/cache
   script:
     - sonar-scanner
-  # by default sonar free => one branch only 
+  # by default sonar free => one branch only
   # according to QA policy => do not scan all branches
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ----------------------------------------------------------------------------
+# Étape 7 — analyse du Dockerfile (misconfiguration / IaC)
+# ----------------------------------------------------------------------------
+.dockerfile-scan:
+  extends: .sast
+  rules:
+    - if: $EXEC_ONLY == $SCANNER || $EXEC_ONLY == "dockerfile" || $EXEC_ONLY == "all"
+
+hadolint:
+  extends: .dockerfile-scan
+  image: hadolint/hadolint:v2.15.1-alpine     # variante AVEC shell
+  variables:
+    SCANNER: "hadolint"
+  script:
+    # 1) rapport au format Code Quality, affiché dans les merge requests
+    - hadolint --format gitlab_codeclimate Dockerfile > hadolint-codequality.json || true
+    # 2) sortie lisible dans le log + code retour (échec à partir de "warning")
+    - hadolint --failure-threshold warning Dockerfile
+  artifacts:
+    paths: [hadolint-codequality.json]
+    reports:
+      codequality: hadolint-codequality.json
+
+trivy-config:
+  extends: .dockerfile-scan
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  variables:
+    SCANNER: "trivy-config"
+  script:
+    - trivy config --format table --output trivy-config.txt Dockerfile
+    - trivy config --exit-code 1 --severity HIGH,CRITICAL Dockerfile
+  artifacts:
+    paths: [trivy-config.txt]
+
+kics:
+  extends: .dockerfile-scan
+  image:
+    name: checkmarx/kics:v2.2.0
+    entrypoint: [""]
+  variables:
+    SCANNER: "kics"
+  # Étape 7.7 : KICS est la "porte" du Dockerfile -> l'échec n'est plus toléré
+  allow_failure: false
+  script:
+    - kics scan -p Dockerfile -o kics-report --report-formats html,json,glsast --fail-on high,critical --no-progress
+  artifacts:
+    paths: [kics-report/]
+    reports:
+      sast: kics-report/gl-sast-results.json
+
+# ----------------------------------------------------------------------------
+# Étape 8 — construire et publier l'image dans le registry du projet
+# ----------------------------------------------------------------------------
+docker-build:
+  stage: package
+  image: docker:28.3.2
+  services:
+    - docker:28.3.2-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"     # le client et le démon dind communiquent en TLS
+  needs: [unit-test-job]             # on ne construit que du code dont les tests passent
+  cache: []
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build --pull -t "$IMAGE_TAG" .
+    - docker push "$IMAGE_TAG"
+    # RepoDigests = "registry/projet@sha256:..." (le digest du manifest poussé)
+    - IMAGE_REF=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_TAG")
+    - echo "IMAGE_REF=${IMAGE_REF}" >> build.env
+    - echo "BUILD_JOB_ID=${CI_JOB_ID}" >> build.env
+    - cat build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+# ----------------------------------------------------------------------------
+# Étape 9 — scan d'image, SBOM, scan du SBOM
+# ----------------------------------------------------------------------------
+# 9.2 — approche [2] : scan direct de l'image
+trivy-image:
+  stage: scan-image
+  image:
+    name: aquasec/trivy:0.75.0
+    entrypoint: [""]
+  needs: [docker-build]          # -> récupère IMAGE_REF via le dotenv
+  allow_failure: true            # informatif : la "porte" est grype-sbom
+  variables:
+    TRIVY_USERNAME: "$CI_REGISTRY_USER"
+    TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    TRIVY_CACHE_DIR: ".trivycache/"
+  cache:
+    key: trivy-db
+    paths: [.trivycache/]
+  script:
+    - trivy image --format table --output trivy-image.txt "$IMAGE_REF"
+    - trivy image --exit-code 1 --severity CRITICAL "$IMAGE_REF"
+  artifacts:
+    access: developer
+    when: always
+    paths: [trivy-image.txt]
+
+# 9.3.a — approche [3], étape 1 : SBOM de l'image (Syft)
+sbom-image:
+  stage: sbom
+  image:
+    name: anchore/syft:v1.54.1-debug   # variante "debug" = shell busybox ; binaire en /syft
+    entrypoint: [""]
+  needs: [docker-build]
+  cache: []
+  variables:
+    SYFT_REGISTRY_AUTH_AUTHORITY: "$CI_REGISTRY"
+    SYFT_REGISTRY_AUTH_USERNAME: "$CI_REGISTRY_USER"
+    SYFT_REGISTRY_AUTH_PASSWORD: "$CI_REGISTRY_PASSWORD"
+    # pas d'entrée par fichier dans le SBOM (sinon ~2 600 composants "file")
+    SYFT_FILE_METADATA_SELECTION: "none"
+  script:
+    - /syft scan "registry:${IMAGE_REF}" -o cyclonedx-json=sbom.cdx.json -o table
+  artifacts:
+    access: developer
+    paths: [sbom.cdx.json]
+    expire_in: 90 days
+
+# 9.3.b — SBOM des sources (cdxgen), facultatif
+sbom-source:
+  stage: sbom
+  needs: []
+  cache: []
+  script:
+    - npx --yes @cyclonedx/cdxgen@12.8.5 -t js -o sbom-source.cdx.json .
+  artifacts:
+    access: developer
+    paths: [sbom-source.cdx.json]
+    expire_in: 30 days
+
+# 9.4 — approche [3], étape 2 : validation du SBOM par Grype (la PORTE)
+grype-sbom:
+  stage: scan-image
+  image:
+    name: anchore/grype:v0.120.1-debug   # variante "debug" (shell busybox) ; binaire en /grype
+    entrypoint: [""]
+  needs: [sbom-image]            # -> récupère l'artefact sbom.cdx.json
+  variables:
+    GRYPE_DB_CACHE_DIR: "${CI_PROJECT_DIR}/.grype-db"
+  cache:
+    key: grype-db
+    paths: [.grype-db/]
+  script:
+    - /grype sbom:sbom.cdx.json -o table -o json=grype.json --fail-on critical
+  artifacts:
+    access: developer
+    when: always
+    paths: [grype.json]
+
+# 9.4 — OSV-Scanner sur le même SBOM, pour comparer (installation vérifiée à l'étape 12)
+osv-sbom:
+  stage: scan-image
+  image: alpine:edge
+  needs: [sbom-image]
+  allow_failure: true
+  cache: []
+  before_script:
+    - apk add --no-cache osv-scanner
+  script:
+    # -L : OSV reconnaît un SBOM CycloneDX grâce à l'extension .cdx.json
+    - osv-scanner scan source -L sbom.cdx.json --format html --output-file osv-sbom.html
+  artifacts:
+    access: developer
+    when: always
+    paths: [osv-sbom.html]
