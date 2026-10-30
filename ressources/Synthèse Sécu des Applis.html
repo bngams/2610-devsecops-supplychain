@@ -1,0 +1,624 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Synthèse Sécu des Applis</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one long reference page, sticky section nav, dense "fiche" rows for the Top 10. */
+:root{
+  --bg:#f4f6f9; --surface:#ffffff; --fg:#16202c; --muted:#5a6878; --line:#d6dde6;
+  --accent:#1f4fd6; --accent-soft:#e6ecfb; --warn:#b4530a; --warn-soft:#fdf0e3; --ok:#1d7a4f; --ok-soft:#e3f4ea; --crit:#b3261e; --crit-soft:#fbe7e5;
+  --code-bg:#eef1f6;
+  --display:"Sora",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f141b; --surface:#171e27; --fg:#e6ebf1; --muted:#9aa8b8; --line:#2a3542;
+  --accent:#7ea2ff; --accent-soft:#1b2744; --warn:#f0a35a; --warn-soft:#3a2a16; --ok:#5fcf93; --ok-soft:#15301f; --crit:#ff8a80; --crit-soft:#3d1c1a;
+  --code-bg:#0b0f15; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141b; --surface:#171e27; --fg:#e6ebf1; --muted:#9aa8b8; --line:#2a3542;
+  --accent:#7ea2ff; --accent-soft:#1b2744; --warn:#f0a35a; --warn-soft:#3a2a16; --ok:#5fcf93; --ok-soft:#15301f; --crit:#ff8a80; --crit-soft:#3d1c1a;
+  --code-bg:#0b0f15; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.55;margin:0}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+code,pre{font-family:var(--mono);font-size:.88em}
+code{background:var(--code-bg);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code-bg);padding:12px 14px;border-radius:6px;overflow-x:auto;line-height:1.45;margin:0}
+h1,h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.2}
+h2{font-size:1.6rem;font-weight:700}
+h3{font-size:1.12rem;font-weight:600}
+h4{font-size:.95rem;font-weight:600}
+p{margin:0}
+ul{margin:0;padding-left:1.15em}
+li+li{margin-top:.25em}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+header.hero{padding-block:44px 28px;border-bottom:1px solid var(--line);background:var(--surface)}
+header.hero h1{font-size:clamp(1.8rem,4vw,2.7rem);font-weight:700;margin-top:8px}
+header.hero .lead{max-width:62ch;color:var(--muted);margin-top:14px;font-size:1.02rem}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;font-size:.85rem;color:var(--muted)}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+nav.toc .wrap{display:flex;gap:4px;overflow-x:auto;padding-block:8px;scrollbar-width:none}
+nav.toc a{white-space:nowrap;text-decoration:none;color:var(--fg);font-size:.85rem;padding:6px 12px;border-radius:999px;border:1px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{border-color:var(--line);background:var(--surface);outline:none}
+nav.toc a b{font-family:var(--mono);font-weight:500;color:var(--muted);margin-right:6px}
+
+section.part{padding-block:44px;border-bottom:1px solid var(--line)}
+section.part>.wrap>.head{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:26px;max-width:70ch}
+section.part .head p{color:var(--muted)}
+
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;min-width:0}
+.card h3,.card h4{margin-bottom:8px}
+.card .eyebrow{margin-bottom:4px}
+.card ul{font-size:.92rem}
+.note{border-left:3px solid var(--accent);padding:8px 14px;background:var(--accent-soft);border-radius:0 6px 6px 0;font-size:.92rem;margin-top:16px}
+.note.warn{border-color:var(--warn);background:var(--warn-soft)}
+
+/* pipeline strip */
+.pipe{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-top:8px}
+.pipe .st{flex:0 0 auto;min-width:118px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;position:relative}
+.pipe .st+.st::before{content:"›";position:absolute;left:-9px;top:8px;color:var(--muted);font-size:1.1rem}
+.pipe .st .eyebrow{font-size:.66rem}
+.pipe .st b{display:block;font-family:var(--display);font-weight:600;font-size:.9rem;margin:2px 0 4px}
+.pipe .st small{display:block;color:var(--muted);font-size:.78rem;line-height:1.35}
+.pipe .st.gate{border-color:var(--accent)}
+
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--display);font-weight:600;font-size:.82rem;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+
+/* OWASP rows */
+.row{display:grid;grid-template-columns:150px 1fr 1fr;gap:18px;padding:22px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .id{font-family:var(--display);font-weight:700;font-size:1.55rem;color:var(--accent);line-height:1}
+.row .id small{display:block;font-family:var(--body);font-weight:600;font-size:.95rem;color:var(--fg);margin-top:6px;line-height:1.25}
+.row .id .was{display:block;font-family:var(--mono);font-size:.7rem;color:var(--muted);margin-top:8px}
+.row .col{min-width:0}
+.row h4{margin-bottom:6px;color:var(--muted);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;font-family:var(--mono);font-weight:500}
+.row ul{font-size:.92rem}
+.row .cs{margin-top:10px;font-size:.82rem;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{font-family:var(--mono);font-size:.7rem;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--surface)}
+.tag.pipe-t{border-color:var(--accent);color:var(--accent)}
+.tag.sys{border-color:var(--ok);color:var(--ok)}
+.tag.no{border-color:var(--crit);color:var(--crit)}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:.9rem}
+.kv dt{font-family:var(--mono);font-size:.78rem;color:var(--muted);padding-top:2px}
+.kv dd{margin:0}
+
+/* checklist */
+.check{columns:2;column-gap:28px;font-size:.92rem}
+.check li{break-inside:avoid;list-style:none;padding-left:1.4em;position:relative;margin:0 0 .45em}
+.check li::before{content:"";position:absolute;left:0;top:.35em;width:.85em;height:.85em;border:1.5px solid var(--muted);border-radius:3px}
+
+footer{padding-block:28px 48px;color:var(--muted);font-size:.85rem}
+footer ul{columns:2;column-gap:28px;padding-left:1.1em}
+footer li{break-inside:avoid}
+
+@media (max-width:760px){
+  .row{grid-template-columns:1fr;gap:12px;padding:18px 0}
+  .row .id{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .row .id small{margin:0}
+  .check,footer ul{columns:1}
+}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">AELION · Sécurité des applications · octobre 2026</div>
+    <h1>Synthèse Sécu des Applis</h1>
+    <p class="lead">Du cadre (référentiels, acteurs, veille) à l'outillage DevSecOps du lab, jusqu'aux bonnes pratiques concrètes à promouvoir aux développeurs, classées selon l'OWASP Top 10 et les Cheat Sheets.</p>
+    <div class="meta">
+      <span>1 · Cadre &amp; acteurs</span><span>2 · DevSecOps &amp; supply chain (le lab)</span><span>3 · Pentest &amp; DAST</span><span>4 · Bonnes pratiques dev × OWASP Top 10</span><span>5 · Checklist</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <div class="wrap">
+    <a href="#cadre"><b>1</b>Cadre &amp; acteurs</a>
+    <a href="#devsecops"><b>2</b>DevSecOps / Supply chain</a>
+    <a href="#pentest"><b>3</b>Pentest &amp; DAST</a>
+    <a href="#owasp"><b>4</b>Bonnes pratiques × Top 10</a>
+    <a href="#crypto"><b>4b</b>Focus crypto &amp; auth</a>
+    <a href="#checklist"><b>5</b>Checklist</a>
+  </div>
+</nav>
+
+<!-- ============ 1. CADRE ============ -->
+<section class="part" id="cadre">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Partie 1</div>
+      <h2>Cadre, référentiels et acteurs</h2>
+      <p>La sécurité applicative ne vit pas seule : elle répond à des obligations (conformité), s'inscrit dans une organisation (rôles) et se nourrit d'une veille continue.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="eyebrow">Conformité → certification</div>
+        <h3>Référentiels</h3>
+        <ul>
+          <li><b>ISO 27001</b> : SMSI, socle générique (RGPD, NIS2 s'y adossent).</li>
+          <li><b>NIS2</b> : directive UE, entités « essentielles / importantes », obligations de gestion des risques et de notification d'incident.</li>
+          <li><b>DORA</b> : résilience opérationnelle numérique du secteur financier (ACPR), inclut le risque lié aux prestataires TIC.</li>
+          <li><b>SOC 2</b> : rapport d'audit (Trust Services Criteria) très demandé par les clients SaaS.</li>
+          <li><b>Sectoriels</b> : plateformes agréées facturation électronique, aviation, santé (ANS/ARS, programme CaRE).</li>
+          <li><b>RGPD</b> : minimisation, chiffrement, pseudonymisation, données en dev/preprod.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Organismes FR</div>
+        <h3>ANSSI &amp; CERT-FR</h3>
+        <ul>
+          <li><b>ANSSI</b> (cyber.gouv.fr) : guides et recommandations (ex. déploiement de conteneurs Docker, parcours de sécurisation sur messervices.cyber.gouv.fr).</li>
+          <li><b>CERT-FR</b> : alertes, avis de vulnérabilités, bulletins (veille passive par abonnement).</li>
+          <li><b>BPI</b> / financements, diagnostics cyber.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Dans l'entreprise</div>
+        <h3>Rôles et structures</h3>
+        <dl class="kv">
+          <dt>DSI</dt><dd>pilote le SI, arbitre budgets et priorités</dd>
+          <dt>RSSI</dt><dd>politique de sécurité (PSSI), risques, conformité, sensibilisation</dd>
+          <dt>SOC</dt><dd>supervision 24/7, SIEM, détection</dd>
+          <dt>CERT/CSIRT</dt><dd>réponse à incident, coordination</dd>
+          <dt>VOC</dt><dd>gestion du cycle de vie des vulnérabilités (priorisation, remédiation)</dd>
+          <dt>Dev / Ops</dt><dd>appliquent en continu : c'est l'objet de la partie 4</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Veille</div>
+        <h3>Passive et active</h3>
+        <ul>
+          <li><b>Passive</b> : abonnements CERT-FR, NVD/CVE, OWASP, <a href="https://app.opencve.io/">OpenCVE</a> (alertes par produit).</li>
+          <li><b>Active</b> : suivre les éditeurs et projets (blogs, releases), <a href="https://endoflife.date/">endoflife.date</a> pour les fins de support, scorecards OpenSSF.</li>
+          <li><b>Cycle de vie d'une vuln</b> : découverte → CVE/CVSS → mesures conservatoires (MCO/MCS : réduire la surface) → correctif → re-scan.</li>
+          <li>Le <b>SBOM</b> (partie 2) rend cette veille automatisable.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Le référentiel applicatif</div>
+        <h3>OWASP</h3>
+        <ul>
+          <li><b>Top 10</b> : les catégories de risques les plus fréquentes (édition 2025 utilisée en partie 4).</li>
+          <li><b>Cheat Sheet Series</b> : fiches pratiques par sujet (Password Storage, Session, JWT, Crypto…).</li>
+          <li><b>ASVS</b> : exigences de sécurité vérifiables, par niveau (1 à 3).</li>
+          <li><b>WSTG</b> : guide d'audit/pentest clé en main, avec sa checklist xlsx.</li>
+          <li><b>CWE</b> (MITRE) : la « CVE de la programmation » : faiblesses de code que SonarQube/Semgrep savent détecter.</li>
+          <li>Outils : ZAP, Dependency-Track, Juice Shop, WebGoat, CycloneDX.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note">À retenir : <b>Audit</b> (WSTG) + <b>DevSecOps</b> (dépendances, code, config) + <b>Veille</b> (Top 10, fiches OWASP, CERT-FR). Les trois couvrent le cycle de vie complet.</div>
+  </div>
+</section>
+
+<!-- ============ 2. DEVSECOPS ============ -->
+<section class="part" id="devsecops">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Partie 2 · approche « blue team »</div>
+      <h2>DevSecOps et sécurité de la supply chain</h2>
+      <p>Intégrer la sécurité dans le SDLC et automatiser les vérifications dans le pipeline : retour rapide pour les devs avant les opérations coûteuses, et portes (gates) avant le déploiement.</p>
+    </div>
+
+    <h3>Le pipeline du lab (GitLab CI)</h3>
+    <div class="pipe">
+      <div class="st"><span class="eyebrow">build</span><b>build-app</b><small>npm ci, sans scripts ni Cypress</small></div>
+      <div class="st"><span class="eyebrow">test</span><b>unit-test</b><small>tests unitaires</small></div>
+      <div class="st"><span class="eyebrow">sast / sca</span><b>npm audit · osv-scanner · SonarCloud</b><small>dépendances + code (CWE)</small></div>
+      <div class="st"><span class="eyebrow">iac</span><b>hadolint · trivy config · KICS</b><small>Dockerfile, secrets, config</small></div>
+      <div class="st"><span class="eyebrow">package</span><b>docker-build</b><small>multi-stage, non-root, push par digest</small></div>
+      <div class="st"><span class="eyebrow">sbom</span><b>syft</b><small>SBOM image + SBOM sources (CycloneDX)</small></div>
+      <div class="st gate"><span class="eyebrow">scan-image · gate</span><b>trivy · grype · osv</b><small>bloque si CRITICAL/HIGH ; re-scan nightly sans rebuild</small></div>
+      <div class="st"><span class="eyebrow">sign</span><b>cosign</b><small>signature keyless (OIDC) + attestations SBOM et provenance SLSA</small></div>
+      <div class="st gate"><span class="eyebrow">verify · gate</span><b>cosign verify + policy rego</b><small>bonne source, bonne branche, bon déclencheur</small></div>
+    </div>
+
+    <div class="grid" style="margin-top:22px">
+      <div class="card">
+        <div class="eyebrow">Familles d'analyse</div>
+        <h3>SAST, SCA, IaC, DAST</h3>
+        <ul>
+          <li><b>SAST</b> (code) : SonarQube/SonarCloud, Semgrep → CWE, qualité, syntaxes d'injection, appels fichiers.</li>
+          <li><b>SCA</b> (dépendances) : npm audit, OSV-Scanner, Snyk, Trivy, Grype → CVE. Les résultats divergent (bases, périmètre système ou non) : comparer, puis choisir une référence.</li>
+          <li><b>IaC / config</b> : hadolint, Trivy config, KICS → Dockerfile, Compose, Ansible, Terraform, secrets en clair.</li>
+          <li><b>DAST</b> (appli qui tourne) : OWASP ZAP, WPScan → « pentest automatisé », voir partie 3.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Décomposition</div>
+        <h3>SBOM</h3>
+        <ul>
+          <li>Inventaire des composants (CycloneDX / SPDX) généré à la fin du build : « décomposition prête à l'analyse ».</li>
+          <li>Scanner le SBOM de l'image finale élimine le bruit (devDependencies, éléments absents du runtime) par rapport au scan des sources.</li>
+          <li>Archiver le SBOM comme artefact long terme et le re-scanner périodiquement : cron + Grype, ou plateforme (<b>Dependency-Track</b>, Snyk).</li>
+          <li>Permet de répondre en minutes à « sommes-nous exposés à la CVE X ? ».</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Supply chain ≠ CI/CD</div>
+        <h3>Provenance et intégrité</h3>
+        <ul>
+          <li>Question centrale : <i>ce que je télécharge est-il bien ce que l'éditeur a publié ?</i> (cas Trivy début 2026).</li>
+          <li><b>Épingler par digest</b> : <code>node:24-trixie-slim@sha256:…</code>, jamais un tag seul.</li>
+          <li><b>Vérifier les binaires</b> : <code>slsa-verifier</code>, signatures Sigstore des outils.</li>
+          <li><b>Vérifier les paquets</b> : <code>npm audit signatures</code>, Gradle <code>--write-verification-metadata sha256</code>, checksums Maven.</li>
+          <li><b>OpenSSF</b> : Sigstore (cosign), SLSA, Scorecard et badges Best Practices pour choisir ses dépendances.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Signer ce que l'on produit</div>
+        <h3>cosign, attestations, SLSA</h3>
+        <ul>
+          <li>Signature <b>keyless</b> : certificat éphémère lié à l'identité OIDC du pipeline, journal public Rekor.</li>
+          <li>Une substitution d'image est détectée à la vérification (<code>no signatures found</code>).</li>
+          <li><b>Attestation</b> = signature d'un prédicat : SBOM, provenance SLSA v1 (qui a construit, depuis quelle source, quelle branche, quel déclencheur).</li>
+          <li>La <b>politique</b> (Rego) refuse une image construite hors de <code>main</code> ou par un trigger non autorisé.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Secrets</div>
+        <h3>Vault</h3>
+        <ul>
+          <li>Place transverse : secrets du pipeline, de l'appli, clés de chiffrement, certificats, tokens courts.</li>
+          <li>Jamais de secret dans le dépôt ni dans l'image ; variables CI <b>protégées et masquées</b>, mais « masqué » ≠ sûr (fuite possible via encodage).</li>
+          <li>Rotation, audit des accès, identités de workload (OIDC) plutôt que clés statiques.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Registry privé</div>
+        <h3>Nexus / Harbor en proxy</h3>
+        <ul>
+          <li>Un seul point d'entrée pour npm, Maven, PyPI, Docker Hub : cache, disponibilité, et <b>quarantaine</b> (délai, analyse, validation) avant mise à disposition.</li>
+          <li>Politique d'autorisation des paquets (licences, âge minimum, score).</li>
+          <li>Images de base internes durcies et re-scannées.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Durcissement</div>
+        <h3>Image &amp; conteneur</h3>
+        <ul>
+          <li>Multi-stage, copier uniquement le nécessaire, <code>npm ci --omit=dev --ignore-scripts</code>.</li>
+          <li><b>Utilisateur non-root</b> en numérique (<code>USER 1000:1000</code>), distroless quand possible.</li>
+          <li>Pas de <code>latest</code>, <code>.dockerignore</code>, pas de secret en <code>ARG</code>/<code>ENV</code>.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Attaque sur le pipeline</div>
+        <h3>Poisoned Pipeline Execution</h3>
+        <ul>
+          <li>Un contributeur modifie <code>.gitlab-ci.yml</code> (ou un script appelé) pour exfiltrer des secrets ou signer une image malveillante.</li>
+          <li>Parades : branches protégées, <b>CODEOWNERS</b> sur les fichiers CI, variables protégées limitées aux branches protégées, pas de secrets pour les MR issues de forks, runners dédiés, revue obligatoire.</li>
+          <li>La signature keyless ne « ment pas » : le certificat porte la branche et le pipeline d'origine, d'où l'intérêt de la politique de vérification.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">Règle d'or des gates : <b>fail fast</b> pour les devs (lint, SAST, SCA sur les sources en quelques secondes), <b>fail closed</b> avant déploiement (scan d'image, signature, vérification de provenance). Un job en <i>allow_failure</i> + rapport HTML est un bon premier pas ; une vraie porte bloque.</div>
+  </div>
+</section>
+
+<!-- ============ 3. PENTEST ============ -->
+<section class="part" id="pentest">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Partie 3 · côté « red team »</div>
+      <h2>Audit, pentest, DAST</h2>
+      <p>Audit (WSTG) → Pentest → DAST : plus on automatise, plus on peut intégrer au pipeline ou aux routines de scan continu.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Démarche vue en TP (Vulnversity)</h3>
+        <ul>
+          <li><b>Reconnaissance</b> : nmap, dirb/gobuster, exploit-db.</li>
+          <li><b>Exploitation</b> : upload d'un fichier <code>.phtml</code> non filtré → reverse shell → écoute <code>nc -lvnp 4444</code>.</li>
+          <li><b>Post-exploitation</b> : logs, fichiers users, clé SSH, GTFOBins → élévation de privilèges.</li>
+          <li>Chaque étape correspond à une défense de la partie 4 (filtrage upload, droits d'exécution, non-root, journalisation).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Environnement &amp; outils</h3>
+        <ul>
+          <li>Kali (local, VM ou distante) + VPN vers la cible ; Burp Suite, sqlmap, hydra, nmap, ZAP.</li>
+          <li>Cyber Kill Chain, red team vs blue team, purple team.</li>
+          <li>WSTG : checklist xlsx comme trame de rapport (statut, criticité, actions, défauts relevés).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Apprendre et s'entraîner</h3>
+        <ul>
+          <li><a href="https://juice-shop.github.io/tab_learning.html">OWASP Juice Shop</a>, <a href="https://github.com/digininja/DVWA">DVWA</a>, <a href="https://github.com/WebGoat/WebGoat">WebGoat</a> (leçons par item du Top 10).</li>
+          <li><a href="https://tryhackme.com/path/outline/jrpenetrationtester">TryHackMe – Jr Penetration Tester</a>, CTF.</li>
+          <li>Bug bounty comme complément aux pentests contractuels.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>DAST en continu</h3>
+        <ul>
+          <li>ZAP baseline/full scan sur un environnement de recette, à chaque release ou en nocturne.</li>
+          <li>Scanners spécialisés (WPScan pour WordPress, Nuclei pour des templates de vulnérabilités).</li>
+          <li>Complète le SAST : détecte les erreurs de configuration et de logique visibles seulement à l'exécution.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. OWASP TOP 10 ============ -->
+<section class="part" id="owasp">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Partie 4 · à promouvoir aux devs</div>
+      <h2>Bonnes pratiques × OWASP Top 10 (2025)</h2>
+      <p>Pour chaque catégorie : ce que ça couvre, les pratiques à adopter côté application, et la Cheat Sheet OWASP de référence. Les étiquettes indiquent où l'automatisation du pipeline aide et ce qui relève du système.</p>
+    </div>
+
+    <!-- A01 -->
+    <div class="row">
+      <div class="id">A01<small>Broken Access Control</small><span class="was">inchangé depuis 2021</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>IDOR : <code>/api/orders/1234</code> accessible sans vérifier le propriétaire.</li><li>Élévation (user → admin), contournement par URL, méthodes HTTP non filtrées, CORS permissif.</li><li>Fichiers « privés » servis publiquement, <code>robots.txt</code> qui révèle les chemins sensibles.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>Deny by default</b>, contrôle <b>côté serveur</b> sur chaque requête ; le front ne fait que masquer.</li><li>RBAC / ABAC centralisé (middleware, policies), vérification de propriété sur chaque ressource.</li><li>Identifiants non devinables (UUID) mais ce n'est pas une protection en soi.</li><li>CORS en liste blanche d'origines, pas de <code>*</code> avec credentials.</li><li>Rate limiting par utilisateur ; journaliser les refus d'accès.</li></ul>
+        <div class="tags"><span class="tag pipe-t">tests d'autorisation auto</span><span class="tag pipe-t">DAST / ZAP</span></div>
+        <p class="cs">Cheat Sheets : Authorization, Access Control, IDOR Prevention, CORS.</p></div>
+    </div>
+
+    <!-- A02 -->
+    <div class="row">
+      <div class="id">A02<small>Security Misconfiguration</small><span class="was">2021 : A05</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Comptes/mots de passe par défaut, debug activé en prod, stack traces exposées.</li><li>En-têtes HTTP manquants, listing de répertoires, services inutiles ouverts.</li><li>Conteneur root, secrets en variables d'environnement commités.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li>En-têtes : <code>Content-Security-Policy</code>, <code>Strict-Transport-Security</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code>, <code>Permissions-Policy</code>.</li><li>Configuration par environnement, identique en structure (IaC), secrets injectés depuis un vault.</li><li>Désactiver debug, pages d'erreur par défaut, endpoints d'admin exposés.</li><li>Images minimales, non-root, ports et capacités réduits.</li></ul>
+        <div class="tags"><span class="tag pipe-t">KICS · trivy config · hadolint</span><span class="tag sys">durcissement OS / WAF</span></div>
+        <p class="cs">Cheat Sheets : HTTP Headers, Docker Security, Infrastructure as Code Security, Secrets Management.</p></div>
+    </div>
+
+    <!-- A03 -->
+    <div class="row">
+      <div class="id">A03<small>Software Supply Chain Failures</small><span class="was">2021 : A06 Vulnerable &amp; Outdated Components (élargi)</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Dépendances vulnérables ou abandonnées, paquets malveillants (typosquatting, maintainer compromis).</li><li>Outils de build ou images de base substitués, pipeline empoisonné.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li>Lockfile commité, <code>npm ci</code>, <code>--ignore-scripts</code> en CI ; mises à jour automatisées (Renovate/Dependabot) avec revue.</li><li>SCA à chaque pipeline, <b>SBOM</b> archivé et re-scanné, Dependency-Track.</li><li>Images et actions/outils épinglés par <b>digest</b> ; vérification de signature/provenance (cosign, slsa-verifier, <code>npm audit signatures</code>).</li><li>Registry proxy interne avec quarantaine ; choisir ses libs via OpenSSF Scorecard et endoflife.date.</li><li>Signer et attester ce que l'on livre (cosign + SLSA).</li></ul>
+        <div class="tags"><span class="tag pipe-t">osv · trivy · grype · syft · cosign</span><span class="tag sys">Nexus / Harbor</span></div>
+        <p class="cs">Cheat Sheets : Software Supply Chain Security, Vulnerable Dependency Management, CI/CD Security, NPM Security.</p></div>
+    </div>
+
+    <!-- A04 -->
+    <div class="row">
+      <div class="id">A04<small>Cryptographic Failures</small><span class="was">2021 : A02</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Mots de passe en MD5/SHA-1 ou sans sel, données personnelles en clair en base ou dans les sauvegardes.</li><li>TLS absent ou mal configuré, clés dans le code, algorithmes maison.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li>Mots de passe : <b>Argon2id</b> (salt unique par utilisateur, pepper hors base), repli scrypt/bcrypt ; jamais de chiffrement réversible pour les mots de passe.</li><li>TLS 1.2+/1.3 partout, y compris appli ↔ base en cloud ; HSTS.</li><li>Stratégie : <b>data-at-rest</b> (disque/TDE) contre le vol de support, <b>chiffrement par champ</b> (AES-256-GCM) contre la fuite SQL, clés dans un vault/KMS avec rotation.</li><li>Pour les données les plus sensibles : clé <b>dérivée du secret de l'utilisateur</b> (voir focus 4b).</li><li>Sauvegardes chiffrées, clé absente du support de stockage ; données masquées en dev/preprod.</li></ul>
+        <div class="tags"><span class="tag pipe-t">Semgrep / Sonar (algos faibles)</span><span class="tag no">jamais de crypto maison</span></div>
+        <p class="cs">Cheat Sheets : Password Storage, Cryptographic Storage, Key Management, TLS, Transport Layer Security.</p></div>
+    </div>
+
+    <!-- A05 -->
+    <div class="row">
+      <div class="id">A05<small>Injection</small><span class="was">2021 : A03 (inclut XSS)</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>SQL, NoSQL, commandes système, LDAP, templates, XSS (réfléchi, stocké, DOM).</li><li>Outils d'attaque : sqlmap, payloads XSS, injection dans les uploads (partie 3).</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>Requêtes paramétrées</b> / ORM (PDO préparé plutôt que concaténation), jamais de SQL dynamique à partir d'une entrée.</li><li><b>Never trust user input</b> : validation en liste blanche côté serveur (le front n'est qu'un confort).</li><li>Encodage de sortie contextuel (HTML, attribut, JS, URL) ; frameworks qui échappent par défaut ; CSP comme filet.</li><li>Pas d'appel shell avec des entrées ; API natives plutôt que <code>exec</code>.</li><li>Chemins de fichiers normalisés et bornés (path traversal).</li></ul>
+        <div class="tags"><span class="tag pipe-t">Sonar · Semgrep (CWE-89, 79, 78)</span><span class="tag pipe-t">ZAP</span><span class="tag sys">WAF</span></div>
+        <p class="cs">Cheat Sheets : Injection Prevention, SQL Injection Prevention, Query Parameterization, XSS Prevention, Input Validation, OS Command Injection Defense.</p></div>
+    </div>
+
+    <!-- A06 -->
+    <div class="row">
+      <div class="id">A06<small>Insecure Design</small><span class="was">2021 : A04</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Défaut de conception que le code parfait ne corrige pas : logique métier abusable, absence de limites, récupération de compte faible.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>Threat modeling</b> léger dès la conception (STRIDE, cas d'abus), exigences ASVS dans les user stories.</li><li>Limites métier : quotas, anti-automatisation (rate limit, CAPTCHA en sachant qu'il se contourne), étapes de validation.</li><li>Séparation des environnements et des privilèges, principe du moindre privilège.</li><li>Revue de sécurité des flux sensibles (paiement, reset de mot de passe, upload).</li></ul>
+        <div class="tags"><span class="tag">revue de conception</span><span class="tag">ASVS</span></div>
+        <p class="cs">Cheat Sheets : Threat Modeling, Secure Product Design, Abuse Case, Attack Surface Analysis.</p></div>
+    </div>
+
+    <!-- A07 -->
+    <div class="row">
+      <div class="id">A07<small>Authentication Failures</small><span class="was">2021 : A07 Identification &amp; Authentication Failures</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Brute force, credential stuffing, messages d'erreur qui révèlent l'existence d'un compte.</li><li>Sessions qui n'expirent pas, tokens dans <code>localStorage</code>, fixation de session.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>MFA</b> : TOTP ou mieux <b>passkeys / WebAuthn</b> (résistants au phishing) ; SMS en dernier recours.</li><li>Déléguer : <b>OAuth 2.0 / OpenID Connect</b> avec PKCE, SSO ; ne pas réécrire l'authentification.</li><li>Message d'échec <b>générique</b> (« identifiants invalides »), même temps de réponse ; idem pour la réinitialisation.</li><li>Rate limiting, verrouillage progressif, détection de mots de passe compromis (HIBP), politique de longueur plutôt que de complexité.</li><li>Session : régénérer l'ID à la connexion, expiration, invalidation à la déconnexion.</li><li><b>JWT → cookie</b> <code>HttpOnly; Secure; SameSite=Lax|Strict</code>, pas en localStorage ; voir focus 4b.</li></ul>
+        <div class="tags"><span class="tag pipe-t">ZAP auth tests</span><span class="tag sys">fail2ban · CrowdSec · WAF</span></div>
+        <p class="cs">Cheat Sheets : Authentication, Session Management, Multifactor Authentication, Forgot Password, Credential Stuffing Prevention, JSON Web Token.</p></div>
+    </div>
+
+    <!-- A08 -->
+    <div class="row">
+      <div class="id">A08<small>Software or Data Integrity Failures</small><span class="was">2021 : A08</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Code ou données acceptés sans vérification d'intégrité : désérialisation d'objets non fiables, mises à jour non signées, scripts tiers modifiés.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>Subresource Integrity</b> pour les scripts CDN, CSP.</li><li>Ne jamais désérialiser des données non fiables en objets (préférer JSON + schéma validé).</li><li>Signer les artefacts et les mises à jour, vérifier avant exécution ; JWT : vérifier <code>alg</code>, <code>iss</code>, <code>aud</code>, <code>exp</code>, refuser <code>none</code>.</li><li>Intégrité du pipeline (branches protégées, revue, CODEOWNERS) : recoupe A03.</li></ul>
+        <div class="tags"><span class="tag pipe-t">cosign verify · policy</span></div>
+        <p class="cs">Cheat Sheets : Deserialization, Third Party JavaScript Management, Software Supply Chain Security.</p></div>
+    </div>
+
+    <!-- A09 -->
+    <div class="row">
+      <div class="id">A09<small>Security Logging &amp; Alerting Failures</small><span class="was">2021 : A09 Logging &amp; Monitoring</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Intrusion détectée des mois plus tard ; logs absents, non centralisés, ou contenant des secrets.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li>Journaliser les <b>événements de sécurité</b> : connexions (succès/échecs), changements de droits, accès refusés, validations rejetées, actions admin.</li><li>Logs structurés (JSON), horodatés (NTP), avec identifiant de corrélation ; <b>jamais</b> de mot de passe, token, carte bancaire, données personnelles brutes.</li><li>Centralisation (ELK/Loki, SIEM) et <b>alertes</b> réellement traitées (SOC) ; conservation adaptée au RGPD.</li><li>Protéger les logs contre l'injection et la modification.</li></ul>
+        <div class="tags"><span class="tag sys">SIEM · SOC</span></div>
+        <p class="cs">Cheat Sheets : Logging, Logging Vocabulary, Application Logging Vocabulary.</p></div>
+    </div>
+
+    <!-- A10 -->
+    <div class="row">
+      <div class="id">A10<small>Mishandling of Exceptional Conditions</small><span class="was">nouveau en 2025</span></div>
+      <div class="col"><h4>Le risque</h4>
+        <ul><li>Erreurs mal gérées : exception avalée, état incohérent, « fail open » (le contrôle échoue → accès accordé), stack trace au client, épuisement de ressources.</li></ul></div>
+      <div class="col"><h4>À promouvoir</h4>
+        <ul><li><b>Fail closed</b> : en cas d'erreur d'un contrôle de sécurité, refuser.</li><li>Gestion centralisée des exceptions : réponse générique à l'utilisateur, détail dans les logs.</li><li>Timeouts, retries bornés, limites de taille (body, upload), circuit breakers.</li><li>Tests des cas limites et des chemins d'erreur, pas seulement du chemin nominal.</li></ul>
+        <div class="tags"><span class="tag pipe-t">tests · Sonar (exceptions vides)</span></div>
+        <p class="cs">Cheat Sheets : Error Handling, Denial of Service.</p></div>
+    </div>
+
+    <div class="note warn"><b>Upload de fichiers</b> (transverse A01/A05/A02, vu en TP) : liste blanche d'extensions <i>et</i> de types MIME vérifiés sur le contenu, taille maximale, renommage aléatoire, stockage hors de la racine web ou dans un object storage, <b>aucun droit d'exécution</b>, analyse antivirus en arrière-plan, service via <code>Content-Disposition</code> avec un type forcé. Cheat Sheet : File Upload.</div>
+  </div>
+</section>
+
+<!-- ============ 4b. FOCUS ============ -->
+<section class="part" id="crypto">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Focus 4b</div>
+      <h2>Hash, chiffrement, tokens : les choix concrets</h2>
+      <p>Les quatre sujets qui reviennent dans chaque revue de code, avec les paramètres recommandés aujourd'hui.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="eyebrow">Mots de passe</div>
+        <h3>Argon2id, salt et pepper</h3>
+        <ul>
+          <li><b>Argon2id</b> : m = 19 MiB, t = 2, p = 1 (minimum OWASP) ; ajuster pour ~0,5 s côté serveur. Repli : scrypt, puis bcrypt (coût ≥ 10, limite 72 octets).</li>
+          <li><b>Salt</b> : aléatoire, unique par utilisateur, stocké avec le hash (les libs le font).</li>
+          <li><b>Pepper</b> : secret global <b>hors base</b> (vault, variable d'env, HSM), appliqué via HMAC avant le hash ou en chiffrant le hash ; un dump SQL seul devient inutilisable.</li>
+          <li>Re-hasher à la connexion quand les paramètres évoluent.</li>
+        </ul>
+        <pre>hash = argon2id( hmac_sha256(pepper, password), salt )</pre>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Données</div>
+        <h3>Stratégies de chiffrement</h3>
+        <dl class="kv">
+          <dt>at rest</dt><dd>Disque / TDE de la base. Protège contre le vol de disque et de sauvegarde, <b>pas</b> contre une injection SQL : l'appli lit en clair.</dd>
+          <dt>par champ</dt><dd>Chiffrer depuis l'appli les colonnes sensibles (IBAN, santé, documents) en AES-256-GCM avec nonce unique. Perte de recherche/tri sur ces colonnes ; prévoir un hash d'index si besoin.</dd>
+          <dt>enveloppe</dt><dd>DEK par enregistrement ou par tenant, chiffrée par une KEK dans un KMS/Vault ; rotation sans re-chiffrer toute la base.</dd>
+          <dt>clé utilisateur</dt><dd>KEK dérivée du mot de passe (Argon2id) ou d'une passkey ; le serveur ne peut pas lire. Prix : perte du mot de passe = perte des données, prévoir une clé de récupération ; pas de traitement serveur possible.</dd>
+          <dt>backups</dt><dd>Dump logique ou backup physique, archive chiffrée, clé jamais présente sur le stockage hot/cold. Tester la restauration.</dd>
+          <dt>dev / preprod</dt><dd>Jamais de données réelles : jeu de test ou script de pseudonymisation à l'import.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Sessions &amp; API</div>
+        <h3>JWT, cookies, CSRF</h3>
+        <ul>
+          <li>Stocker le token dans un cookie <code>HttpOnly; Secure; SameSite=Lax</code> (ou <code>Strict</code>) : inaccessible au JS, donc à une XSS.</li>
+          <li>Cookie ⇒ protection <b>CSRF</b> : SameSite + token anti-CSRF ou en-tête custom sur les requêtes qui modifient l'état.</li>
+          <li>Access token court (minutes) + refresh token rotatif, révocable, lié à l'appareil.</li>
+          <li>Côté serveur : algorithme imposé (RS256/ES256/EdDSA), vérifier <code>iss</code>, <code>aud</code>, <code>exp</code>, <code>nbf</code>, <code>kid</code> ; refuser <code>none</code> et la confusion HS/RS.</li>
+          <li>Pas de données sensibles dans le payload (lisible en base64).</li>
+          <li>Session serveur classique (ID opaque) reste un très bon choix pour une appli web monolithique.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Identité</div>
+        <h3>MFA, SSO, protocoles</h3>
+        <ul>
+          <li>Ordre de préférence : <b>passkeys / FIDO2</b> → TOTP → push → SMS/e-mail.</li>
+          <li>MFA obligatoire pour les comptes admin et les actions sensibles (step-up).</li>
+          <li>OAuth 2.0 + OIDC avec PKCE (y compris pour les applis confidentielles), pas de flux implicite ni ROPC.</li>
+          <li>Codes de récupération à usage unique, hashés comme des mots de passe.</li>
+          <li>Permissions : RBAC pour les rôles, ACL/ABAC pour la propriété des ressources, cohérence front ⇄ back.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Côté système</div>
+        <h3>Ce que l'infra ajoute</h3>
+        <ul>
+          <li>WAF / « cloud firewall » : Cloudflare, Sucuri, AWS/OVH/Azure ; on-prem : pfSense/OPNsense, Fortinet, Palo Alto ; open source : CrowdSec, Traefik + middlewares.</li>
+          <li>Anti brute force réseau : fail2ban, GeoIP, listes de blocage ; honeypots.</li>
+          <li>Permissions système : utilisateur dédié, pas de root, cloisonnement conteneur, répertoires d'upload sans exécution.</li>
+          <li>Ces mesures complètent le code, elles ne le remplacent pas.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. CHECKLIST ============ -->
+<section class="part" id="checklist">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Partie 5</div>
+      <h2>Checklist à afficher au-dessus du bureau</h2>
+      <p>La version courte, à relire à chaque revue de code et à chaque mise en production.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Dans le code</h3>
+        <ul class="check">
+          <li>Contrôle d'accès serveur sur chaque route, deny by default</li>
+          <li>Requêtes paramétrées, zéro concaténation SQL</li>
+          <li>Validation liste blanche + encodage de sortie</li>
+          <li>Argon2id + salt + pepper hors base</li>
+          <li>Token en cookie HttpOnly/Secure/SameSite, CSRF géré</li>
+          <li>JWT : alg imposé, iss/aud/exp vérifiés</li>
+          <li>MFA disponible, obligatoire pour les admins</li>
+          <li>Messages d'erreur génériques, détails en log</li>
+          <li>Fail closed, timeouts, limites de taille</li>
+          <li>Upload : extension + MIME + taille, hors webroot, no exec</li>
+          <li>Champs sensibles chiffrés (AES-GCM), clés en vault</li>
+          <li>Pas de secret, de token ni de PII dans les logs</li>
+          <li>En-têtes CSP, HSTS, nosniff, Referrer-Policy</li>
+          <li>SRI sur les scripts tiers</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Dans le pipeline</h3>
+        <ul class="check">
+          <li>Lockfile commité, <code>npm ci --ignore-scripts</code></li>
+          <li>SAST (Sonar/Semgrep) + SCA (OSV/Trivy) à chaque push</li>
+          <li>Scan IaC (KICS, Trivy config, hadolint)</li>
+          <li>Image multi-stage, non-root, base épinglée par digest</li>
+          <li>SBOM généré, archivé, re-scanné la nuit</li>
+          <li>Gate bloquante sur CRITICAL/HIGH avant déploiement</li>
+          <li>Image signée (cosign keyless) + attestations SBOM et SLSA</li>
+          <li>Vérification de signature et de politique au déploiement</li>
+          <li>Outils tiers vérifiés (slsa-verifier, signatures npm)</li>
+          <li>Branches protégées, CODEOWNERS sur la CI, variables protégées</li>
+          <li>Secrets depuis un vault, jamais dans le dépôt</li>
+          <li>Registry proxy interne avec quarantaine</li>
+          <li>DAST (ZAP) sur la recette avant release</li>
+          <li>Renovate/Dependabot + endoflife.date suivis</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="eyebrow" style="margin-bottom:10px">Sources et références</div>
+    <ul>
+      <li><a href="https://owasp.org/Top10/">OWASP Top 10 (2025)</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/">OWASP Cheat Sheet Series</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html">Password Storage Cheat Sheet (Argon2id)</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html">Cryptographic Storage Cheat Sheet</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html">JSON Web Token Cheat Sheet</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html">Session Management Cheat Sheet</a></li>
+      <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html">File Upload Cheat Sheet</a></li>
+      <li><a href="https://owasp.org/www-project-application-security-verification-standard/">OWASP ASVS</a></li>
+      <li><a href="https://github.com/OWASP/wstg">OWASP WSTG et checklists</a></li>
+      <li><a href="https://slsa.dev/">SLSA</a> · <a href="https://www.sigstore.dev/">Sigstore / cosign</a> · <a href="https://openssf.org/">OpenSSF</a> · <a href="https://scorecard.dev/">Scorecard</a></li>
+      <li><a href="https://cyber.gouv.fr/publications/recommandations-de-securite-relatives-au-deploiement-de-conteneurs-docker">ANSSI – conteneurs Docker</a> · <a href="https://www.cert.ssi.gouv.fr/">CERT-FR</a></li>
+      <li><a href="https://dependencytrack.org/">OWASP Dependency-Track</a> · <a href="https://www.zaproxy.org/">OWASP ZAP</a></li>
+      <li><a href="https://endoflife.date/">endoflife.date</a> · <a href="https://app.opencve.io/">OpenCVE</a></li>
+      <li>Lab : <i>pipeline-sast-cicd-nb-2610</i> (parties 1 et 2) et tableau Excalidraw du cours</li>
+    </ul>
+  </div>
+</footer>
+
+</body></html>
